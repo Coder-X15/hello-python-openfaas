@@ -38,9 +38,11 @@ jobs:
           echo "Installing arkade..."
           curl -sLS https://get.arkade.dev | sudo sh
           echo "Installing OpenFaaS..."
-          arkade install openfaas
+          # Enforce 1 replica to save resources on the GitHub runner
+          arkade install openfaas --set gateway.replicas=1
           echo "Waiting for OpenFaaS gateway to be ready..."
-          kubectl rollout status -n openfaas deploy/gateway --timeout=5m
+          # Increase timeout to 10m and add debug output in case of failure
+          kubectl rollout status -n openfaas deploy/gateway --timeout=10m || (kubectl get pods -n openfaas && kubectl describe deploy/gateway -n openfaas && exit 1)
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
