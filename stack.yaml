@@ -1,0 +1,10 @@
+version: 1.0
+provider:
+  name: openfaas
+  gateway: http://127.0.0.1:8080
+functions:
+  hello-python:
+    lang: python3-http
+    handler: ./hello-python
+    image: muzankibetsuji/hello-python:latest # add docker username to deploy as a public image
+                                              # openfaas-ce allows only public images to run

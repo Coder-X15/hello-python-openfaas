@@ -1,0 +1,74 @@
+name: CI - Test and Deploy OpenFaaS Function
+
+on:
+  # Trigger on push to the main branch
+  push:
+    branches:
+      - main
+  # Allow manual triggers from the GitHub Actions UI
+  workflow_dispatch: {}
+
+jobs:
+  test-and-deploy:
+    name: Run End-to-End Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Install faas-cli
+        run: curl -sSL https://cli.openfaas.com | sudo sh
+
+      - name: Build and Push Docker image
+        run: |
+          faas-cli build -f ./stack.yaml
+          faas-cli push -f ./stack.yaml
+
+      - name: Setup Kind Cluster
+        uses: helm/kind-action@v1.10.0
+
+      - name: Install and Verify OpenFaaS
+        run: |
+          echo "Installing arkade..."
+          curl -sLS https://get.arkade.dev | sudo sh
+          echo "Installing OpenFaaS..."
+          arkade install openfaas
+          echo "Waiting for OpenFaaS gateway to be ready..."
+          kubectl rollout status -n openfaas deploy/gateway --timeout=5m
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      - name: Verify Function Deployment
+        run: |
+          echo "Waiting for function to be ready..."
+          kubectl rollout status -n openfaas-fn deploy/hello-python --timeout=2m
+          echo "Port-forwarding gateway..."
+          kubectl port-forward -n openfaas svc/gateway 8080:8080 &
+          sleep 5
+          echo "Invoking function..."
+          curl -f http://127.0.0.1:8080/function/hello-python -d "GitHub Actions"
+  destroyevent:
+    name: Destroy OpenFaaS Function
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
