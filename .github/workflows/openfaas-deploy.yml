@@ -6,11 +6,21 @@ on:
     branches:
       - main
   # Allow manual triggers from the GitHub Actions UI
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to run'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - destroy
 
 jobs:
   test-and-deploy:
     name: Run End-to-End Test
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'test')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -60,15 +70,25 @@ jobs:
           sleep 5
           echo "Invoking function..."
           curl -f http://127.0.0.1:8080/function/hello-python -d "GitHub Actions"
-  destroyevent:
-    name: Destroy OpenFaaS Function
+  destroy:
+    name: Destroy Function from a Persistent Cluster
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Kubeconfig
+        uses: azure/k8s-setup-kubeconfig@v3
+        with:
+          # This requires a KUBECONFIG secret pointing to your persistent cluster
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
